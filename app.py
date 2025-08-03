@@ -1,16 +1,8 @@
 """
-Databricks Genie Bot
+Databricks Genie Bot - Simplified Traditional Authentication
 
-Author: Luiz Carrossoni Neto
-Revision: 1.0
-
-This script implements an experimental chatbot that interacts with Databricks' Genie API. The bot facilitates conversations with Genie,
-Databricks' AI assistant, through a chat interface.
-
-Note: This is experimental code and is not intended for production use.
-
-
-Update on May 02 to reflect Databricks API Changes https://www.databricks.com/blog/genie-conversation-apis-public-preview
+This version uses the standard App ID + Password authentication method
+instead of Managed Identity for better compatibility.
 """
 
 import os
@@ -26,18 +18,43 @@ from databricks.sdk.service.dashboards import GenieAPI
 import asyncio
 import requests
 
-# Log
-logging.basicConfig(level=logging.ERROR)
+# Configure logging for Azure
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
-# Env vars
+# Load environment variables
 load_dotenv()
 
+# Required environment variables with validation
 DATABRICKS_SPACE_ID = os.getenv("DATABRICKS_SPACE_ID")
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
+
+# Bot credentials
 APP_ID = os.getenv("MicrosoftAppId", "")
 APP_PASSWORD = os.getenv("MicrosoftAppPassword", "")
+
+# Validate required environment variables
+if not DATABRICKS_SPACE_ID:
+    logger.error("DATABRICKS_SPACE_ID environment variable is required")
+    raise ValueError("DATABRICKS_SPACE_ID environment variable is required")
+
+if not DATABRICKS_HOST:
+    logger.error("DATABRICKS_HOST environment variable is required")
+    raise ValueError("DATABRICKS_HOST environment variable is required")
+
+if not DATABRICKS_TOKEN:
+    logger.error("DATABRICKS_TOKEN environment variable is required")
+    raise ValueError("DATABRICKS_TOKEN environment variable is required")
+
+logger.info(f"Initialized with Databricks host: {DATABRICKS_HOST}")
+logger.info(f"Bot App ID configured: {'Yes' if APP_ID else 'No'}")
 
 workspace_client = WorkspaceClient(
     host=DATABRICKS_HOST,
@@ -259,8 +276,8 @@ def process_query_results(answer_json: Dict) -> str:
     
     return response
 
-SETTINGS = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD
-                                       )
+# Standard Bot Framework Settings
+SETTINGS = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
 ADAPTER = BotFrameworkAdapter(SETTINGS)
 
 class MyBot(ActivityHandler):
@@ -314,10 +331,24 @@ async def messages(req: web.Request) -> web.Response:
 app = web.Application()
 app.router.add_post("/api/messages", messages)
 
+# Add health check endpoint for Azure
+async def health_check(request):
+    return web.json_response({"status": "healthy", "service": "Databricks Genie Bot"})
+
+app.router.add_get("/", health_check)
+app.router.add_get("/health", health_check)
+
+def create_app():
+    """Factory function to create the app for Gunicorn"""
+    return app
+
 if __name__ == "__main__":
     try:
-        host = os.getenv("HOST", "localhost")
-        port = int(os.environ.get("PORT", 3978))
+        # For Azure, bind to all interfaces and use PORT environment variable
+        host = os.getenv("HOST", "0.0.0.0")
+        port = int(os.environ.get("PORT", 8000))
+        logger.info(f"Starting Databricks Genie Bot on {host}:{port}")
         web.run_app(app, host=host, port=port)
     except Exception as error:
         logger.exception("Error running app")
+        raise
